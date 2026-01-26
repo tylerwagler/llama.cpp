@@ -1762,6 +1762,10 @@ private:
                     res->n_decode_total          = metrics.n_decode_total;
                     res->n_busy_slots_total      = metrics.n_busy_slots_total;
 
+                    // Collect KV cache metrics
+                    res->kv_cache_used_cells = llama_get_kv_cache_used_cells(ctx);
+                    res->kv_cache_tokens     = llama_get_kv_cache_token_count(ctx);
+
                     if (task.metrics_reset_bucket) {
                         metrics.reset_bucket();
                     }
@@ -3271,6 +3275,14 @@ void server_routes::init_routes() {
                     {"name",  "requests_deferred"},
                     {"help",  "Number of requests deferred."},
                     {"value",  (uint64_t) res_task->n_tasks_deferred}
+            },{
+                    {"name",  "kv_cache_usage_ratio"},
+                    {"help",  "KV-cache usage. 1 means 100 percent usage."},
+                    {"value",  res_task->kv_cache_tokens > 0 ? (float) res_task->kv_cache_used_cells / res_task->kv_cache_tokens : 0.}
+            },{
+                    {"name",  "kv_cache_tokens"},
+                    {"help",  "KV-cache tokens."},
+                    {"value",  (uint64_t) std::max(res_task->kv_cache_tokens, 0)}
             }}}
         };
 

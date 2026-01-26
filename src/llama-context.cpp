@@ -4,6 +4,7 @@
 #include "llama-impl.h"
 #include "llama-batch.h"
 #include "llama-io.h"
+#include "llama-kv-cache.h"
 #include "llama-memory.h"
 #include "llama-mmap.h"
 #include "llama-model.h"
@@ -3078,6 +3079,38 @@ const llama_model * llama_get_model(const llama_context * ctx) {
 
 enum llama_pooling_type llama_pooling_type(const llama_context * ctx) {
     return ctx->pooling_type();
+}
+
+int32_t llama_get_kv_cache_used_cells(const llama_context * ctx) {
+    llama_memory_t mem = ctx->get_memory();
+    if (!mem) {
+        return -1;
+    }
+
+    // Try to cast to llama_kv_cache
+    const llama_kv_cache * kv = dynamic_cast<const llama_kv_cache *>(mem);
+    if (kv) {
+        return kv->get_used_cells();
+    }
+
+    // Not a KV cache type
+    return -1;
+}
+
+int32_t llama_get_kv_cache_token_count(const llama_context * ctx) {
+    llama_memory_t mem = ctx->get_memory();
+    if (!mem) {
+        return -1;
+    }
+
+    // Try to cast to llama_kv_cache
+    const llama_kv_cache * kv = dynamic_cast<const llama_kv_cache *>(mem);
+    if (kv) {
+        return kv->get_size();
+    }
+
+    // Not a KV cache type
+    return -1;
 }
 
 void llama_attach_threadpool(

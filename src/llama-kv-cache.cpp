@@ -991,6 +991,14 @@ uint32_t llama_kv_cache::get_n_stream() const {
     return n_stream;
 }
 
+uint32_t llama_kv_cache::get_used_cells() const {
+    uint32_t total_used = 0;
+    for (const auto & cells : v_cells) {
+        total_used += cells.get_used();
+    }
+    return total_used;
+}
+
 bool llama_kv_cache::get_has_shift() const {
     bool result = false;
 
