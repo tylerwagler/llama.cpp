@@ -531,6 +531,14 @@ extern "C" {
     LLAMA_API           llama_memory_t   llama_get_memory  (const struct llama_context * ctx);
     LLAMA_API  enum llama_pooling_type   llama_pooling_type(const struct llama_context * ctx); // TODO: rename to llama_get_pooling_type
 
+    // Get the number of used KV cache cells (i.e. have at least one sequence assigned to them)
+    // Returns -1 if the context does not use a KV cache
+    LLAMA_API int32_t llama_get_kv_cache_used_cells(const struct llama_context * ctx);
+
+    // Get the total number of KV cache cells
+    // Returns -1 if the context does not use a KV cache
+    LLAMA_API int32_t llama_get_kv_cache_token_count(const struct llama_context * ctx);
+
     LLAMA_API const struct llama_vocab * llama_model_get_vocab(const struct llama_model * model);
     LLAMA_API enum llama_rope_type       llama_model_rope_type(const struct llama_model * model);
 
