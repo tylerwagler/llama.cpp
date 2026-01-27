@@ -5,7 +5,10 @@
 #include "llama-batch.h"
 #include "llama-io.h"
 #include "llama-kv-cache.h"
+#include "llama-kv-cache-iswa.h"
 #include "llama-memory.h"
+#include "llama-memory-hybrid.h"
+#include "llama-memory-hybrid-iswa.h"
 #include "llama-mmap.h"
 #include "llama-model.h"
 
@@ -3087,13 +3090,45 @@ int32_t llama_get_kv_cache_used_cells(const llama_context * ctx) {
         return -1;
     }
 
-    // Try to cast to llama_kv_cache
-    const llama_kv_cache * kv = dynamic_cast<const llama_kv_cache *>(mem);
-    if (kv) {
+    // Try llama_kv_cache (simple KV cache)
+    if (const llama_kv_cache * kv = dynamic_cast<const llama_kv_cache *>(mem)) {
         return kv->get_used_cells();
     }
 
-    // Not a KV cache type
+    // Try llama_kv_cache_iswa (KV cache with sliding window attention)
+    if (const llama_kv_cache_iswa * kv_iswa = dynamic_cast<const llama_kv_cache_iswa *>(mem)) {
+        uint32_t total_used = 0;
+        if (const llama_kv_cache * base = kv_iswa->get_base()) {
+            total_used += base->get_used_cells();
+        }
+        if (const llama_kv_cache * swa = kv_iswa->get_swa()) {
+            total_used += swa->get_used_cells();
+        }
+        return total_used;
+    }
+
+    // Try llama_memory_hybrid (hybrid KV + recurrent)
+    if (const llama_memory_hybrid * hybrid = dynamic_cast<const llama_memory_hybrid *>(mem)) {
+        if (const llama_kv_cache * kv = hybrid->get_mem_attn()) {
+            return kv->get_used_cells();
+        }
+    }
+
+    // Try llama_memory_hybrid_iswa (hybrid with iSWA)
+    if (const llama_memory_hybrid_iswa * hybrid_iswa = dynamic_cast<const llama_memory_hybrid_iswa *>(mem)) {
+        if (const llama_kv_cache_iswa * kv_iswa = hybrid_iswa->get_mem_attn()) {
+            uint32_t total_used = 0;
+            if (const llama_kv_cache * base = kv_iswa->get_base()) {
+                total_used += base->get_used_cells();
+            }
+            if (const llama_kv_cache * swa = kv_iswa->get_swa()) {
+                total_used += swa->get_used_cells();
+            }
+            return total_used;
+        }
+    }
+
+    // Not a KV cache type (e.g., llama_memory_recurrent)
     return -1;
 }
 
@@ -3103,13 +3138,45 @@ int32_t llama_get_kv_cache_token_count(const llama_context * ctx) {
         return -1;
     }
 
-    // Try to cast to llama_kv_cache
-    const llama_kv_cache * kv = dynamic_cast<const llama_kv_cache *>(mem);
-    if (kv) {
+    // Try llama_kv_cache (simple KV cache)
+    if (const llama_kv_cache * kv = dynamic_cast<const llama_kv_cache *>(mem)) {
         return kv->get_size();
     }
 
-    // Not a KV cache type
+    // Try llama_kv_cache_iswa (KV cache with sliding window attention)
+    if (const llama_kv_cache_iswa * kv_iswa = dynamic_cast<const llama_kv_cache_iswa *>(mem)) {
+        uint32_t total_size = 0;
+        if (const llama_kv_cache * base = kv_iswa->get_base()) {
+            total_size += base->get_size();
+        }
+        if (const llama_kv_cache * swa = kv_iswa->get_swa()) {
+            total_size += swa->get_size();
+        }
+        return total_size;
+    }
+
+    // Try llama_memory_hybrid (hybrid KV + recurrent)
+    if (const llama_memory_hybrid * hybrid = dynamic_cast<const llama_memory_hybrid *>(mem)) {
+        if (const llama_kv_cache * kv = hybrid->get_mem_attn()) {
+            return kv->get_size();
+        }
+    }
+
+    // Try llama_memory_hybrid_iswa (hybrid with iSWA)
+    if (const llama_memory_hybrid_iswa * hybrid_iswa = dynamic_cast<const llama_memory_hybrid_iswa *>(mem)) {
+        if (const llama_kv_cache_iswa * kv_iswa = hybrid_iswa->get_mem_attn()) {
+            uint32_t total_size = 0;
+            if (const llama_kv_cache * base = kv_iswa->get_base()) {
+                total_size += base->get_size();
+            }
+            if (const llama_kv_cache * swa = kv_iswa->get_swa()) {
+                total_size += swa->get_size();
+            }
+            return total_size;
+        }
+    }
+
+    // Not a KV cache type (e.g., llama_memory_recurrent)
     return -1;
 }
 
