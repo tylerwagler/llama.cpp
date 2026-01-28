@@ -988,12 +988,53 @@ If query param `?fail_on_no_slot=1` is set, this endpoint will respond with stat
       "has_new_line": true,
       "n_remain": -1,
       "n_decoded": 136
+    },
+    "kv_cache": {
+      "pos_min": 0,
+      "pos_max": 1152,
+      "cells_used": 1152,
+      "utilization": 0.0176,
+      "cache_efficiency": 0.667
+    },
+    "performance": {
+      "prompt_tokens_per_sec": 140.53,
+      "generation_tokens_per_sec": 65.90,
+      "speculative_acceptance_rate": 0.42,
+      "draft_tokens_total": 256,
+      "draft_tokens_accepted": 107
     }
   }
 ]
 ```
 
 </details>
+
+**Per-Slot KV Cache Metrics** *(added in commit c83a3b95d)*
+
+Each slot now includes a `kv_cache` object with detailed cache utilization metrics:
+
+- `pos_min` (integer): Minimum position in the KV cache for this slot's sequence. `-1` if empty/idle.
+- `pos_max` (integer): Maximum position in the KV cache for this slot's sequence. `-1` if empty/idle.
+- `cells_used` (integer): Number of KV cache cells allocated to this slot (`pos_max - pos_min + 1`). `0` if empty.
+- `utilization` (float): Context window utilization ratio (`pos_max / n_ctx`). Range: `0.0` to `1.0`.
+- `cache_efficiency` (float): Prompt cache hit ratio (cached tokens / total processed tokens). Range: `0.0` to `1.0`.
+
+**Per-Slot Performance Metrics** *(added in commit c83a3b95d)*
+
+Each slot now includes a `performance` object (or `null` if idle) with speed metrics:
+
+- `prompt_tokens_per_sec` (float): Prompt processing speed in tokens/second.
+- `generation_tokens_per_sec` (float): Token generation speed in tokens/second.
+- `speculative_acceptance_rate` (float, optional): Draft token acceptance rate if speculative decoding is enabled. Range: `0.0` to `1.0`.
+- `draft_tokens_total` (integer, optional): Total draft tokens generated (speculative decoding only).
+- `draft_tokens_accepted` (integer, optional): Number of draft tokens accepted (speculative decoding only).
+
+**Use Cases:**
+- **Monitor cache fragmentation**: Check `pos_min`/`pos_max` ranges across slots to identify gaps.
+- **Detect inefficient prompts**: Low `cache_efficiency` indicates poor prompt reuse.
+- **Identify slow requests**: Compare `prompt_tokens_per_sec` and `generation_tokens_per_sec` across slots.
+- **Track context utilization**: Alert when `utilization` exceeds 0.8 (80% of context window used).
+- **Optimize speculative decoding**: Monitor `speculative_acceptance_rate` to tune draft parameters.
 
 ### GET `/metrics`: Prometheus compatible metrics exporter
 
