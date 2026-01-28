@@ -372,6 +372,18 @@ struct server_slot {
         return stop_pos;
     }
 
+    std::string get_state_str() const {
+        switch (state) {
+            case SLOT_STATE_IDLE:              return "idle";
+            case SLOT_STATE_WAIT_OTHER:        return "wait_other";
+            case SLOT_STATE_STARTED:           return "started";
+            case SLOT_STATE_PROCESSING_PROMPT: return "evaluating";
+            case SLOT_STATE_DONE_PROMPT:       return "done_eval";
+            case SLOT_STATE_GENERATING:        return "generating";
+            default:                           return "unknown";
+        }
+    }
+
     void print_timings() const {
         const double t_prompt        =       t_prompt_processing / n_prompt_tokens_processed;
         const double n_prompt_second = 1e3 / t_prompt_processing * n_prompt_tokens_processed;
@@ -406,8 +418,58 @@ struct server_slot {
             {"id",            id},
             {"n_ctx",         n_ctx},
             {"speculative",   can_speculate()},
-            {"is_processing", is_processing()},
+            {"state",         get_state_str()},
+            {"prompt_n",      n_prompt_tokens_processed},
+            {"prompt_ms",     t_prompt_processing},
+            {"predicted_n",   n_decoded},
+            {"predicted_ms",  t_token_generation},
+            {"cache_n",       n_prompt_tokens_cache},
         };
+
+        // Add per-slot KV cache metrics
+        llama_memory_t mem = llama_get_memory(ctx);
+        if (mem) {
+            llama_pos pos_min = llama_memory_seq_pos_min(mem, id);
+            llama_pos pos_max = llama_memory_seq_pos_max(mem, id);
+
+            int32_t cells_used = 0;
+            if (pos_min >= 0 && pos_max >= 0) {
+                cells_used = pos_max - pos_min + 1;
+            }
+
+            res["kv_cache"] = {
+                {"pos_min", pos_min},
+                {"pos_max", pos_max},
+                {"cells_used", cells_used},
+                {"utilization", (n_ctx > 0 && pos_max >= 0) ? (float)pos_max / n_ctx : 0.0f},
+                {"cache_efficiency", n_prompt_tokens_processed > 0
+                    ? (float)n_prompt_tokens_cache / n_prompt_tokens_processed
+                    : 0.0f}
+            };
+        }
+
+        // Add per-slot performance metrics
+        if (n_prompt_tokens_processed > 0 || n_decoded > 0) {
+            res["performance"] = json::object();
+
+            if (n_prompt_tokens_processed > 0 && t_prompt_processing > 0) {
+                res["performance"]["prompt_tokens_per_sec"] =
+                    1e3 / t_prompt_processing * n_prompt_tokens_processed;
+            }
+
+            if (n_decoded > 0 && t_token_generation > 0) {
+                res["performance"]["generation_tokens_per_sec"] =
+                    1e3 / t_token_generation * n_decoded;
+            }
+
+            // Add speculative decoding stats if applicable
+            if (n_draft_total > 0) {
+                res["performance"]["speculative_acceptance_rate"] =
+                    (float)n_draft_accepted / n_draft_total;
+                res["performance"]["draft_tokens_total"] = n_draft_total;
+                res["performance"]["draft_tokens_accepted"] = n_draft_accepted;
+            }
+        }
 
         const auto & ptask = task ? task : task_prev;
 
@@ -3301,6 +3363,25 @@ void server_routes::init_routes() {
                             << "# TYPE llamacpp:" << name << " " << type  << "\n"
                             << "llamacpp:"        << name << " " << value << "\n";
             }
+        }
+
+        for (const auto & slot : res_task->slots_data) {
+            int id = slot.value("id", -1);
+            int n_ctx = slot.value("n_ctx", 0);
+            int n_cached = slot.value("cache_n", 0);
+            bool processing = slot.value("is_processing", false);
+            std::string state = slot.value("state", "unknown");
+            
+            std::string lbl = "{slot_id=\"" + std::to_string(id) + "\"}";
+            prometheus << "llamacpp:slot_n_ctx" << lbl << " " << n_ctx << "\n";
+            prometheus << "llamacpp:slot_tokens_cached" << lbl << " " << n_cached << "\n";
+            prometheus << "llamacpp:slot_state{slot_id=\"" << std::to_string(id) << "\",state=\"" << state << "\"} 1\n";
+            
+            prometheus << "llamacpp:slot_prompt_tokens_processed" << lbl << " " << slot.value("prompt_n", 0) << "\n";
+            prometheus << "llamacpp:slot_prompt_ms" << lbl << " " << slot.value("prompt_ms", 0.0) << "\n";
+            prometheus << "llamacpp:slot_predicted_tokens" << lbl << " " << slot.value("predicted_n", 0) << "\n";
+            prometheus << "llamacpp:slot_predicted_ms" << lbl << " " << slot.value("predicted_ms", 0.0) << "\n";
+            prometheus << "llamacpp:slot_cache_hit_tokens" << lbl << " " << slot.value("cache_n", 0) << "\n";
         }
 
         res->headers["Process-Start-Time-Unix"] = std::to_string(res_task->t_start);
