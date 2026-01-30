@@ -30,6 +30,15 @@ using json = nlohmann::ordered_json;
 
 constexpr int HTTP_POLLING_SECONDS = 1;
 
+// Global variable to track model loading progress (0.0 to 1.0)
+static std::atomic<float> g_model_load_progress{0.0f};
+
+// Callback for model loading progress
+static bool model_load_progress_callback(float progress, void * /*user_data*/) {
+    g_model_load_progress.store(progress, std::memory_order_relaxed);
+    return true; // continue loading
+}
+
 // state diagram: https://github.com/ggml-org/llama.cpp/pull/9283
 enum slot_state {
     SLOT_STATE_IDLE,
@@ -683,6 +692,11 @@ private:
         SRV_INF("loading model '%s'\n", params.model.path.c_str());
 
         params_base = params;
+
+        // Reset and set up progress callback
+        g_model_load_progress.store(0.0f, std::memory_order_relaxed);
+        params_base.load_progress_callback = model_load_progress_callback;
+        params_base.load_progress_callback_user_data = nullptr;
 
         llama_init = common_init_from_params(params_base);
 
@@ -3255,7 +3269,15 @@ void server_routes::init_routes() {
         bool ctx_server; // do NOT delete this line
         GGML_UNUSED(ctx_server);
 
-        res->ok({{"status", "ok"}});
+        json response = {{"status", "ok"}};
+
+        // Include loading progress if model is still loading
+        float progress = g_model_load_progress.load(std::memory_order_relaxed);
+        if (progress > 0.0f && progress < 1.0f) {
+            response["load_progress"] = progress;
+        }
+
+        res->ok(response);
         return res;
     };
 

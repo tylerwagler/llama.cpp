@@ -181,6 +181,11 @@ bool server_http_context::init(const common_params & params) {
     auto middleware_server_state = [this](const httplib::Request & req, httplib::Response & res) {
         bool ready = is_ready.load();
         if (!ready) {
+            // Allow /health endpoint even during loading to expose progress
+            if (req.path.find("/health") != std::string::npos) {
+                return true;
+            }
+
             auto tmp = string_split<std::string>(req.path, '.');
             if (req.path == "/" || tmp.back() == "html") {
                 res.status = 503;
