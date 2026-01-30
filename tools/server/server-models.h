@@ -54,6 +54,7 @@ struct server_model_meta {
     std::string name;
     int port = 0;
     server_model_status status = SERVER_MODEL_STATUS_UNLOADED;
+    float load_progress = 0.0f; // 0.0 to 1.0, progress during model loading
     int64_t last_used = 0; // for LRU unloading
     std::vector<std::string> args; // args passed to the model instance, will be populated by render_args()
     int exit_code = 0; // exit code of the model instance process (only valid if status == FAILED)

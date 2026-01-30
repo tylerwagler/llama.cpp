@@ -251,6 +251,7 @@ void server_models::load_models() {
             /* name         */ preset.first,
             /* port         */ 0,
             /* status       */ SERVER_MODEL_STATUS_UNLOADED,
+            /* load_progress*/ 0.0f,
             /* last_used    */ 0,
             /* args         */ std::vector<std::string>(),
             /* exit_code    */ 0,
@@ -525,6 +526,46 @@ void server_models::load(const std::string & name) {
             }
         });
 
+        std::thread progress_thread([this, &name, port]() {
+            // poll child's /health endpoint for loading progress
+            httplib::Client client("127.0.0.1", port);
+            client.set_connection_timeout(1, 0); // 1 second timeout
+            client.set_read_timeout(1, 0);
+            client.set_write_timeout(1, 0);
+
+            while (true) {
+                // check if model is still loading
+                auto meta = this->get_meta(name);
+                if (!meta || meta->status != SERVER_MODEL_STATUS_LOADING) {
+                    break; // stop polling once not loading
+                }
+
+                // poll /chat/health endpoint (child uses --api-prefix /chat)
+                auto res = client.Get("/chat/health");
+                if (res && res->status == 200) {
+                    try {
+                        auto health_json = json::parse(res->body);
+                        if (health_json.contains("load_progress")) {
+                            float progress = health_json["load_progress"].get<float>();
+                            // update metadata with progress
+                            {
+                                std::lock_guard<std::mutex> lk(this->mutex);
+                                auto it = this->mapping.find(name);
+                                if (it != this->mapping.end()) {
+                                    it->second.meta.load_progress = progress;
+                                }
+                            }
+                        }
+                    } catch (const std::exception & e) {
+                        // ignore JSON parse errors
+                    }
+                }
+
+                // sleep before next poll
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+        });
+
         std::thread stopping_thread([&]() {
             // thread to monitor stopping signal
             auto is_stopping = [this, &name]() {
@@ -560,6 +601,9 @@ void server_models::load(const std::string & name) {
         // note: we cannot join() prior to this point because it will close stdin_file
         if (log_thread.joinable()) {
             log_thread.join();
+        }
+        if (progress_thread.joinable()) {
+            progress_thread.join();
         }
 
         // stop the timeout monitoring thread
@@ -872,6 +916,9 @@ void server_models_routes::init_routes() {
                 preset_copy.unset_option("LLAMA_ARG_PORT");
                 preset_copy.unset_option("LLAMA_ARG_ALIAS");
                 status["preset"] = preset_copy.to_ini();
+            }
+            if (meta.status == SERVER_MODEL_STATUS_LOADING && meta.load_progress > 0.0f) {
+                status["load_progress"] = meta.load_progress;
             }
             if (meta.is_failed()) {
                 status["exit_code"] = meta.exit_code;
