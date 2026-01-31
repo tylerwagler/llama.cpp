@@ -327,6 +327,9 @@ private:
     ggml_abort_callback abort_callback      = nullptr;
     void *              abort_callback_data = nullptr;
 
+    llama_progress_callback progress_callback           = nullptr;
+    void *                  progress_callback_user_data = nullptr;
+
     std::vector<std::pair<ggml_backend_t, ggml_backend_set_n_threads_t>> set_n_threads_fns;
 
     // pointers and buffer types used for the compute buffer of each backend

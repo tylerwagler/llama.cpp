@@ -613,6 +613,12 @@ struct common_params {
     // return false from callback to abort model loading or true to continue
     llama_progress_callback load_progress_callback = NULL;
     void *                  load_progress_callback_user_data = NULL;
+
+    // optional callback for context initialization progress and cancellation:
+    // called with a progress value between 0.0 and 1.0.
+    // return false from callback to abort context initialization or true to continue
+    llama_progress_callback context_progress_callback = NULL;
+    void *                  context_progress_callback_user_data = NULL;
 };
 
 // call once at the start of a program if it uses libcommon

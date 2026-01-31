@@ -36,7 +36,21 @@ static std::atomic<float> g_model_load_progress{0.0f};
 // Callback for model loading progress
 static bool model_load_progress_callback(float progress, void * /*user_data*/) {
     g_model_load_progress.store(progress, std::memory_order_relaxed);
+    fprintf(stderr, "[PROGRESS] Model loading: %.1f%%\n", progress * 100.0f);
+    fflush(stderr);
     return true; // continue loading
+}
+
+// Callback for context initialization progress
+// Maps context init (0-1) to the remaining portion (88.7%-100%)
+static bool context_init_progress_callback(float progress, void * /*user_data*/) {
+    constexpr float MODEL_LOAD_END = 0.887f;
+    float total_progress = MODEL_LOAD_END + (progress * (1.0f - MODEL_LOAD_END));
+    g_model_load_progress.store(total_progress, std::memory_order_relaxed);
+    fprintf(stderr, "[PROGRESS] Context init: %.1f%% (raw: %.1f%% -> total: %.1f%%)\n",
+            progress * 100.0f, progress * 100.0f, total_progress * 100.0f);
+    fflush(stderr);
+    return true; // continue initialization
 }
 
 // state diagram: https://github.com/ggml-org/llama.cpp/pull/9283
@@ -693,10 +707,12 @@ private:
 
         params_base = params;
 
-        // Reset and set up progress callback
+        // Reset and set up progress callbacks
         g_model_load_progress.store(0.0f, std::memory_order_relaxed);
         params_base.load_progress_callback = model_load_progress_callback;
         params_base.load_progress_callback_user_data = nullptr;
+        params_base.context_progress_callback = context_init_progress_callback;
+        params_base.context_progress_callback_user_data = nullptr;
 
         llama_init = common_init_from_params(params_base);
 

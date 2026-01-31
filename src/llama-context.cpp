@@ -255,6 +255,15 @@ llama_context::llama_context(
 
         llama_set_abort_callback(this, params.abort_callback, params.abort_callback_data);
 
+        // store progress callback for later use in sched_reserve()
+        progress_callback = params.progress_callback;
+        progress_callback_user_data = params.progress_callback_user_data;
+
+        // report context init start
+        if (params.progress_callback && !params.progress_callback(0.0f, params.progress_callback_user_data)) {
+            throw std::runtime_error("context initialization aborted by callback");
+        }
+
         // graph outputs buffer
         {
             if (output_reserve(params.n_seq_max) < params.n_seq_max) {
@@ -264,6 +273,11 @@ llama_context::llama_context(
             LLAMA_LOG_INFO("%s: %10s  output buffer size = %8.2f MiB\n", __func__,
                     ggml_backend_buffer_name    (buf_output.get()),
                     ggml_backend_buffer_get_size(buf_output.get()) / 1024.0 / 1024.0);
+        }
+
+        // report output buffer allocation complete
+        if (params.progress_callback && !params.progress_callback(0.10f, params.progress_callback_user_data)) {
+            throw std::runtime_error("context initialization aborted by callback");
         }
     }
 
@@ -275,7 +289,12 @@ llama_context::llama_context(
             /*.swa_full =*/ params.swa_full,
         };
 
-        memory.reset(model.create_memory(params_mem, cparams));
+        memory.reset(model.create_memory(params_mem, cparams, params.progress_callback, params.progress_callback_user_data));
+
+        // report memory module init complete
+        if (params.progress_callback && !params.progress_callback(0.80f, params.progress_callback_user_data)) {
+            throw std::runtime_error("context initialization aborted by callback");
+        }
     }
 
     // init backends
@@ -339,6 +358,11 @@ llama_context::llama_context(
 
         if (cparams.pipeline_parallel) {
             LLAMA_LOG_INFO("%s: pipeline parallelism enabled\n", __func__);
+        }
+
+        // report backend enumeration complete
+        if (params.progress_callback && !params.progress_callback(0.85f, params.progress_callback_user_data)) {
+            throw std::runtime_error("context initialization aborted by callback");
         }
 
         sched_reserve();
@@ -405,6 +429,11 @@ void llama_context::sched_reserve() {
     gf_res_reserve.reset(new llm_graph_result(max_nodes));
 
     sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, cparams.pipeline_parallel, cparams.op_offload));
+
+    // report scheduler initialization complete
+    if (progress_callback && !progress_callback(0.90f, progress_callback_user_data)) {
+        throw std::runtime_error("context initialization aborted by callback");
+    }
 
     llama_memory_context_ptr mctx;
     if (memory) {
@@ -486,6 +515,11 @@ void llama_context::sched_reserve() {
 
         n_splits_pp = ggml_backend_sched_get_n_splits(sched.get());
         n_nodes_pp  = ggml_graph_n_nodes(gf);
+
+        // report PP graph reserve complete
+        if (progress_callback && !progress_callback(0.95f, progress_callback_user_data)) {
+            throw std::runtime_error("context initialization aborted by callback");
+        }
     }
 
     // reserve with tg (token generation) graph to get the number of splits and nodes
@@ -497,6 +531,11 @@ void llama_context::sched_reserve() {
 
         n_splits_tg = ggml_backend_sched_get_n_splits(sched.get());
         n_nodes_tg  = ggml_graph_n_nodes(gf);
+
+        // report TG graph reserve complete (context init done)
+        if (progress_callback && !progress_callback(1.0f, progress_callback_user_data)) {
+            throw std::runtime_error("context initialization aborted by callback");
+        }
     }
 
     // reserve again with pp graph to avoid ggml-alloc reallocations during inference
@@ -2969,6 +3008,8 @@ llama_context_params llama_context_default_params() {
         /*.type_v                      =*/ GGML_TYPE_F16,
         /*.abort_callback              =*/ nullptr,
         /*.abort_callback_data         =*/ nullptr,
+        /*.progress_callback           =*/ nullptr,
+        /*.progress_callback_user_data =*/ nullptr,
         /*.embeddings                  =*/ false,
         /*.offload_kqv                 =*/ true,
         /*.no_perf                     =*/ true,
