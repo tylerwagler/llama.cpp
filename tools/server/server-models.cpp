@@ -36,7 +36,7 @@ extern char **environ;
 #include <limits.h>
 #endif
 
-#define DEFAULT_STOP_TIMEOUT 10 // seconds
+#define DEFAULT_STOP_TIMEOUT 60 // seconds (increased for GPU contention during swaps)
 
 #define CMD_ROUTER_TO_CHILD_EXIT  "cmd_router_to_child:exit"
 #define CMD_CHILD_TO_ROUTER_READY "cmd_child_to_router:ready"

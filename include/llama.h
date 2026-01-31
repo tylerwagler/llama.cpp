@@ -359,6 +359,15 @@ extern "C" {
         ggml_abort_callback abort_callback;
         void *              abort_callback_data;
 
+        // Progress callback for context initialization
+        // Called with a progress value between 0.0 and 1.0. Pass NULL to disable.
+        // If the provided progress_callback returns true, context initialization continues.
+        // If it returns false, context initialization is immediately aborted.
+        llama_progress_callback progress_callback;
+
+        // context pointer passed to the progress callback
+        void * progress_callback_user_data;
+
         // Keep the booleans together and at the end of the struct to avoid misalignment during copy-by-value.
         bool embeddings;  // if true, extract embeddings (together with logits)
         bool offload_kqv; // offload the KQV ops (including the KV cache) to GPU

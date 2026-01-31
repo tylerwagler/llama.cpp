@@ -30,7 +30,9 @@ llama_kv_cache::llama_kv_cache(
                  uint32_t   n_swa,
            llama_swa_type   swa_type,
     const layer_filter_cb & filter,
-    const  layer_reuse_cb & reuse) :
+    const  layer_reuse_cb & reuse,
+    llama_progress_callback progress_callback,
+    void * progress_callback_user_data) :
     model(model), hparams(model.hparams), v_trans(v_trans),
     n_seq_max(n_seq_max), n_stream(unified ? 1 : n_seq_max), n_pad(n_pad), n_swa(n_swa), swa_type(swa_type) {
 
@@ -179,6 +181,8 @@ llama_kv_cache::llama_kv_cache(
     }
 
     // allocate tensors and initialize the buffers to avoid NaNs in the padding
+    const size_t n_buft = ctx_map.size();
+    size_t buft_idx = 0;
     for (auto & [buft, ctx] : ctx_map) {
         ggml_backend_buffer_t buf;
         if (model.hparams.no_alloc) {
@@ -197,6 +201,15 @@ llama_kv_cache::llama_kv_cache(
 
         ggml_backend_buffer_clear(buf, 0);
         ctxs_bufs.emplace_back(std::move(ctx), buf);
+
+        // Report progress: 10% + (70% * completion ratio)
+        if (progress_callback) {
+            float progress = 0.10f + (0.70f * (float)(buft_idx + 1) / (float)n_buft);
+            if (!progress_callback(progress, progress_callback_user_data)) {
+                throw std::runtime_error("KV cache allocation aborted by callback");
+            }
+        }
+        buft_idx++;
     }
 
     {

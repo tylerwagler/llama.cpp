@@ -7475,7 +7475,9 @@ ggml_tensor * llama_model::get_rope_factors(const llama_cparams & cparams, int i
     return layers[il].rope_short;
 }
 
-llama_memory_i * llama_model::create_memory(const llama_memory_params & params, const llama_cparams & cparams) const {
+llama_memory_i * llama_model::create_memory(const llama_memory_params & params, const llama_cparams & cparams,
+                                             llama_progress_callback progress_callback,
+                                             void * progress_callback_user_data) const {
     llama_memory_i * res;
 
     switch (arch) {
@@ -7595,7 +7597,9 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                 cparams.n_ubatch,
                                 1,
                                 nullptr,
-                                reuse);
+                                reuse,
+                                progress_callback,
+                                progress_callback_user_data);
                     } else {
                         GGML_ASSERT(!hparams.is_swa_any());
 
@@ -7612,7 +7616,9 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                 hparams.n_swa,
                                 hparams.swa_type,
                                 nullptr,
-                                nullptr);
+                                nullptr,
+                                progress_callback,
+                                progress_callback_user_data);
                     }
                 }
             }
