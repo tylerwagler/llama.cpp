@@ -6,34 +6,49 @@ ARG BASE_CUDA_DEV_CONTAINER=nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VER
 
 ARG BASE_CUDA_RUN_CONTAINER=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
 
+ARG BUILD_JOBS=24
+
 FROM ${BASE_CUDA_DEV_CONTAINER} AS build
 
 # CUDA architecture to build for (defaults to all supported archs)
 ARG CUDA_DOCKER_ARCH=default
+ARG BUILD_JOBS
 
 RUN apt-get update && \
-    apt-get install -y build-essential cmake python3 python3-pip git libssl-dev libgomp1
+    apt-get install -y build-essential cmake python3 python3-pip git libssl-dev libgomp1 ccache
+
+# Configure ccache
+ENV PATH=/usr/lib/ccache:$PATH
+ENV CCACHE_DIR=/root/.ccache
+ENV CCACHE_MAXSIZE=10G
+ENV CCACHE_COMPRESS=1
+ENV CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros
+ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
+ENV CMAKE_CUDA_COMPILER_LAUNCHER=ccache
 
 WORKDIR /app
 
 COPY . .
 
-RUN if [ "${CUDA_DOCKER_ARCH}" != "default" ]; then \
+# Cache the CMake build directory for incremental builds.
+# Even though COPY invalidates this layer, the mount cache persists,
+# so CMake only recompiles changed source files.
+RUN --mount=type=cache,id=ccache,target=/root/.ccache \
+    --mount=type=cache,id=llama-build,target=/app/build \
+    if [ "${CUDA_DOCKER_ARCH}" != "default" ]; then \
     export CMAKE_ARGS="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_DOCKER_ARCH}"; \
     fi && \
     cmake -B build -DGGML_NATIVE=OFF -DGGML_CUDA=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DLLAMA_BUILD_TESTS=OFF ${CMAKE_ARGS} -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined . && \
-    cmake --build build --config Release -j$(nproc)
-
-RUN mkdir -p /app/lib && \
-    find build -name "*.so*" -exec cp -P {} /app/lib \;
-
-RUN mkdir -p /app/full \
-    && cp build/bin/* /app/full \
-    && cp *.py /app/full \
-    && cp -r gguf-py /app/full \
-    && cp -r requirements /app/full \
-    && cp requirements.txt /app/full \
-    && cp .devops/tools.sh /app/full/tools.sh
+    cmake --build build --config Release -j${BUILD_JOBS} && \
+    mkdir -p /app/lib && \
+    find build -name "*.so*" -exec cp -P {} /app/lib \; && \
+    mkdir -p /app/full && \
+    cp build/bin/* /app/full && \
+    cp *.py /app/full && \
+    cp -r gguf-py /app/full && \
+    cp -r requirements /app/full && \
+    cp requirements.txt /app/full && \
+    cp .devops/tools.sh /app/full/tools.sh
 
 ## Base image
 FROM ${BASE_CUDA_RUN_CONTAINER} AS base
